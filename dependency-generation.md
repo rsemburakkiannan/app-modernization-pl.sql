@@ -19,8 +19,77 @@ sudo yum install graphviz
 
 ### Step 2: Run the SQL Query
 1. Connect to your Oracle database using SQL*Plus, SQL Developer, or any Oracle client
-2. Replace `'YOUR_SCHEMA'` with your actual schema name in the query above
-3. Run the first query and save the output to a text file (e.g., `dependencies.txt`)
+2. Replace `'YOUR_OBJECT_OWNER'` and `'YOUR_OBJECT_NAME'` with your actual schema and object name (usually uppercase).
+
+```sql
+WITH dependency_tree (
+    object_owner,
+    object_name,
+    object_type,
+    referenced_owner,
+    referenced_name,
+    referenced_type,
+    level,
+    path
+) AS (
+    -- Anchor member: starting point
+    SELECT 
+        d.owner,
+        d.name,
+        d.type,
+        d.referenced_owner,
+        d.referenced_name,
+        d.referenced_type,
+        1 AS level,
+        '/' || d.owner || '.' || d.name AS path
+    FROM 
+        dba_dependencies d
+    WHERE 
+        d.owner = UPPER('YOUR_OBJECT_OWNER')
+        AND d.name = UPPER('YOUR_OBJECT_NAME')
+
+    UNION ALL
+
+    -- Recursive member: walk the dependencies
+    SELECT 
+        d.owner,
+        d.name,
+        d.type,
+        d.referenced_owner,
+        d.referenced_name,
+        d.referenced_type,
+        dt.level + 1,
+        dt.path || ' -> ' || d.owner || '.' || d.name
+    FROM 
+        dba_dependencies d
+        JOIN dependency_tree dt 
+          ON d.owner = dt.referenced_owner 
+         AND d.name = dt.referenced_name
+)
+SELECT 
+    LPAD(' ', level * 2) || object_owner || '.' || object_name || ' (' || object_type || ')' AS dependency_line,
+    path
+FROM 
+    dependency_tree
+ORDER BY level, object_owner, object_name;
+```
+
+---
+
+#### Output Columns
+
+* `dependency_line`: Hierarchical view of dependencies.
+* `path`: Full path showing the chain of calls.
+
+---
+
+#### Notes
+
+* This works on Oracle 11g and newer.
+* You must have access to `DBA_DEPENDENCIES`, or use `ALL_DEPENDENCIES` (for your own schema).
+
+  * Just replace `dba_dependencies` with `all_dependencies` if needed.
+
 
 ### Step 3: Create DOT File
 Create a file called `dependencies.dot` with this structure:
